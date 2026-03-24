@@ -33,6 +33,7 @@ from documents.models import StoragePath
 from documents.models import Tag
 from documents.models import WorkflowTrigger
 from documents.parsers import ParseError
+from documents.parsers import resolve_archive_preference
 from documents.permissions import set_permissions_for_object
 from documents.plugins.base import AlwaysRunPluginMixin
 from documents.plugins.base import ConsumeTaskPlugin
@@ -445,7 +446,19 @@ class ConsumerPlugin(
                 )
                 self.log.debug(f"Parsing {self.filename}...")
 
-                document_parser.parse(self.working_copy, mime_type)
+                # Determine if we should produce an archive
+                needs_pdf = parser_class.requires_pdf_rendition
+                should_produce_archive = needs_pdf or resolve_archive_preference(
+                    mime_type,
+                    self.working_copy,
+                    can_produce_archive=parser_class.can_produce_archive,
+                )
+
+                document_parser.parse(
+                    self.working_copy,
+                    mime_type,
+                    produce_archive=should_produce_archive,
+                )
 
                 self.log.debug(f"Generating thumbnail for {self.filename}...")
                 self._send_progress(

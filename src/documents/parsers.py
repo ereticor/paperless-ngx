@@ -9,17 +9,105 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pikepdf
 from django.conf import settings
 
 from documents.loggers import LoggingMixin
 from documents.utils import copy_file_with_basic_stats
 from documents.utils import run_subprocess
+from paperless.models import ArchiveFileGenerationChoices
 from paperless.parsers.registry import get_parser_registry
+from paperless.parsers.utils import read_file_handle_unicode_errors
 
 if TYPE_CHECKING:
     import datetime
 
 logger = logging.getLogger("paperless.parsing")
+
+
+def resolve_archive_preference(
+    mime_type: str,
+    file_path: Path,
+    *,
+    can_produce_archive: bool,
+) -> bool:
+    """
+    Determine whether to produce an archive file based on the new settings.
+
+    Args:
+        mime_type: The MIME type of the document
+        can_produce_archive: Whether the parser can produce an archive
+        file_path: Path to the document file
+
+    Returns:
+        True if an archive should be produced, False otherwise
+    """
+    if not can_produce_archive:
+        return False
+
+    if settings.ARCHIVE_FILE_GENERATION == ArchiveFileGenerationChoices.ALWAYS:
+        return True
+    elif settings.ARCHIVE_FILE_GENERATION == ArchiveFileGenerationChoices.NEVER:
+        return False
+    elif settings.ARCHIVE_FILE_GENERATION == ArchiveFileGenerationChoices.AUTO:
+        # For non-PDF mime types (images etc.), always produce archive
+        if mime_type != "application/pdf":
+            return True
+
+        # For PDFs, use combined heuristic to detect born-digital vs scanned
+        return _should_produce_archive_for_pdf(file_path)
+
+    return False
+
+
+def _should_produce_archive_for_pdf(pdf_path: Path) -> bool:
+    """
+    Determine if a PDF needs an archive based on heuristics.
+
+    Args:
+        pdf_path: Path to the PDF file
+
+    Returns:
+        True if archive should be produced, False otherwise
+    """
+    try:
+        # Extract text via pdftotext
+        text = ""
+        with tempfile.NamedTemporaryFile(mode="w+") as tmp:
+            run_subprocess(
+                [
+                    "pdftotext",
+                    "-q",
+                    "-layout",
+                    "-enc",
+                    "UTF-8",
+                    str(pdf_path),
+                    tmp.name,
+                ],
+                logger=None,  # Don't log from utility function
+            )
+            text = read_file_handle_unicode_errors(Path(tmp.name))
+
+        # Check if PDF is tagged via pikepdf
+        is_tagged = False
+        with pikepdf.open(pdf_path) as pdf:
+            # Check for /StructTreeRoot in pdf.Root
+            if hasattr(pdf.Root, "StructTreeRoot") or (
+                hasattr(pdf.Root, "MarkInfo") and pdf.Root.MarkInfo.get("Marked", False)
+            ):
+                is_tagged = True
+
+        # Apply heuristic:
+        # 1. If len(text) > 50 AND tagged → born-digital → return False
+        # 2. If len(text) > 50 AND not tagged → scanner OCR'd → return True
+        # 3. If no/little text → raw scan → return True
+        if len(text) > 50:
+            return not is_tagged  # born-digital (tagged) → False, scanner OCR'd → True
+        return True  # raw scan
+
+    except Exception:
+        # If anything fails, default to producing archive
+        return True
 
 
 def is_mime_type_supported(mime_type: str) -> bool:

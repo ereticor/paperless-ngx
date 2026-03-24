@@ -18,7 +18,6 @@ from documents.parsers import make_thumbnail_from_pdf
 from documents.utils import maybe_override_pixel_limit
 from documents.utils import run_subprocess
 from paperless.config import OcrConfig
-from paperless.models import ArchiveFileChoices
 from paperless.models import CleanChoices
 from paperless.models import ModeChoices
 from paperless.parsers.utils import read_file_handle_unicode_errors
@@ -289,6 +288,7 @@ class RasterisedDocumentParser:
         sidecar_file: Path,
         *,
         safe_fallback: bool = False,
+        skip_text: bool = False,
     ) -> dict[str, Any]:
         ocrmypdf_args: dict[str, Any] = {
             "input_file_or_options": input_file,
@@ -309,15 +309,11 @@ class RasterisedDocumentParser:
 
         if self.settings.mode == ModeChoices.FORCE or safe_fallback:
             ocrmypdf_args["force_ocr"] = True
-        elif self.settings.mode in {
-            ModeChoices.SKIP,
-            ModeChoices.SKIP_NO_ARCHIVE,
-        }:
+        elif self.settings.mode == ModeChoices.OFF or skip_text:
             ocrmypdf_args["skip_text"] = True
         elif self.settings.mode == ModeChoices.REDO:
             ocrmypdf_args["redo_ocr"] = True
-        else:  # pragma: no cover
-            raise ParseError(f"Invalid ocr mode: {self.settings.mode}")
+        # ModeChoices.AUTO is handled by the caller
 
         if self.settings.clean == CleanChoices.CLEAN:
             ocrmypdf_args["clean"] = True
@@ -411,34 +407,88 @@ class RasterisedDocumentParser:
         os.environ["OMP_THREAD_LIMIT"] = "1"
         VALID_TEXT_LENGTH = 50
 
+        is_image = self.is_image(mime_type)
+
+        # Text detection heuristic for AUTO mode
+        text_original = None
+        has_usable_text = False
         if mime_type == "application/pdf":
             text_original = self.extract_text(None, document_path)
-            original_has_text = (
+            has_usable_text = (
                 text_original is not None and len(text_original) > VALID_TEXT_LENGTH
             )
-        else:
-            text_original = None
-            original_has_text = False
 
-        # If the original has text, and the user doesn't want an archive,
-        # we're done here
-        skip_archive_for_text = (
-            self.settings.mode == ModeChoices.SKIP_NO_ARCHIVE
-            or self.settings.skip_archive_file
-            in {
-                ArchiveFileChoices.WITH_TEXT,
-                ArchiveFileChoices.ALWAYS,
-            }
-        )
-        if skip_archive_for_text and original_has_text:
-            self.log.debug("Document has text, skipping OCRmyPDF entirely.")
-            self.text = text_original
+        # Core logic: decide whether to run OCRmyPDF and with what parameters
+        should_run_ocrmypdf = True
+        force_ocr = False
+        redo_ocr = False
+        skip_text = False
+
+        if self.settings.mode == ModeChoices.OFF:
+            if is_image and produce_archive:
+                # Image + OFF + archive: use img2pdf then ocrmypdf skip_text for PDF/A
+                should_run_ocrmypdf = True
+                skip_text = True
+            elif is_image and not produce_archive:
+                # Image + OFF + no archive: skip ocrmypdf entirely, text is empty
+                should_run_ocrmypdf = False
+                self.text = ""
+            elif not is_image and produce_archive:
+                # PDF + OFF + archive: ocrmypdf skip_text for PDF/A conversion only
+                should_run_ocrmypdf = True
+                skip_text = True
+            else:  # PDF + OFF + no archive
+                # PDF + OFF + no archive: skip ocrmypdf entirely, use pdftotext
+                should_run_ocrmypdf = False
+                self.text = text_original or ""
+        elif self.settings.mode == ModeChoices.AUTO:
+            if is_image:
+                # Image + AUTO: always run OCR (only way to get text from image)
+                should_run_ocrmypdf = True
+                force_ocr = True
+            elif has_usable_text and not produce_archive:
+                # PDF with text + AUTO + no archive: skip ocrmypdf entirely, use pdftotext
+                should_run_ocrmypdf = False
+                self.text = text_original
+            elif has_usable_text and produce_archive:
+                # PDF with text + AUTO + archive: skip_text for PDF/A conversion only
+                should_run_ocrmypdf = True
+                skip_text = True
+            else:
+                # PDF without text + AUTO: normal OCR
+                should_run_ocrmypdf = True
+        elif self.settings.mode == ModeChoices.FORCE:
+            should_run_ocrmypdf = True
+            force_ocr = True
+        elif self.settings.mode == ModeChoices.REDO:
+            should_run_ocrmypdf = True
+            redo_ocr = True
+
+        # Early return if we're skipping OCRmyPDF entirely
+        if not should_run_ocrmypdf:
+            self.log.debug(f"Skipping OCRmyPDF entirely for mode {self.settings.mode}")
             return
 
-        # Either no text was in the original or there should be an archive
-        # file created, so OCR the file and create an archive with any
-        # text located via OCR
+        # Special handling for image + OFF + archive: convert to PDF first
+        input_file = document_path
+        if is_image and self.settings.mode == ModeChoices.OFF and produce_archive:
+            self.log.debug("Converting image to PDF using img2pdf for archive creation")
+            pdf_path = Path(self.tempdir) / "input.pdf"
 
+            import img2pdf
+
+            # Handle alpha channel removal if needed
+            if self.has_alpha(document_path):
+                self.log.info(
+                    f"Removing alpha layer from {document_path} for compatibility with img2pdf",
+                )
+                input_file = self.remove_alpha(document_path)
+
+            with pdf_path.open("wb") as f:
+                f.write(img2pdf.convert(str(input_file)))
+            input_file = pdf_path
+
+        # Run OCRmyPDF with appropriate parameters
         import ocrmypdf
         from ocrmypdf import EncryptedPdfError
         from ocrmypdf import InputFileError
@@ -448,18 +498,34 @@ class RasterisedDocumentParser:
         archive_path = Path(self.tempdir) / "archive.pdf"
         sidecar_file = Path(self.tempdir) / "sidecar.txt"
 
+        # Build ocrmypdf args with explicit control over OCR behavior
         args = self.construct_ocrmypdf_parameters(
-            document_path,
-            mime_type,
+            input_file,
+            mime_type
+            if not (
+                is_image and self.settings.mode == ModeChoices.OFF and produce_archive
+            )
+            else "application/pdf",
             archive_path,
             sidecar_file,
+            skip_text=skip_text,
         )
+
+        # Override with specific flags if needed
+        if force_ocr:
+            args["force_ocr"] = True
+            args.pop("skip_text", None)
+        if redo_ocr:
+            args["redo_ocr"] = True
+            args.pop("skip_text", None)
+            args.pop("force_ocr", None)
 
         try:
             self.log.debug(f"Calling OCRmyPDF with args: {args}")
             ocrmypdf.ocr(**args)
 
-            if self.settings.skip_archive_file != ArchiveFileChoices.ALWAYS:
+            # Set archive path only if we want to produce an archive
+            if produce_archive:
                 self.archive_path = archive_path
 
             self.text = self.extract_text(sidecar_file, archive_path)
@@ -471,8 +537,7 @@ class RasterisedDocumentParser:
                 "This file is encrypted and/or signed, OCR is impossible. Using "
                 "any text present in the original file.",
             )
-            if original_has_text:
-                self.text = text_original
+            self.text = text_original or ""
         except SubprocessOutputError as e:
             if "Ghostscript PDF/A rendering" in str(e):
                 self.log.warning(
@@ -493,10 +558,15 @@ class RasterisedDocumentParser:
             sidecar_file_fallback = Path(self.tempdir) / "sidecar-fallback.txt"
 
             # Attempt to run OCR with safe settings.
-
             args = self.construct_ocrmypdf_parameters(
-                document_path,
-                mime_type,
+                input_file,
+                mime_type
+                if not (
+                    is_image
+                    and self.settings.mode == ModeChoices.OFF
+                    and produce_archive
+                )
+                else "application/pdf",
                 archive_path_fallback,
                 sidecar_file_fallback,
                 safe_fallback=True,
@@ -525,13 +595,11 @@ class RasterisedDocumentParser:
         # As a last resort, if we still don't have any text for any reason,
         # try to extract the text from the original document.
         if not self.text:
-            if original_has_text:
-                self.text = text_original
-            else:
+            self.text = text_original or ""
+            if not self.text:
                 self.log.warning(
                     f"No text was found in {document_path}, the content will be empty.",
                 )
-                self.text = ""
 
 
 def post_process_text(text: str | None) -> str | None:

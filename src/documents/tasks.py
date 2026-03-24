@@ -52,6 +52,7 @@ from documents.models import StoragePath
 from documents.models import Tag
 from documents.models import WorkflowRun
 from documents.models import WorkflowTrigger
+from documents.parsers import resolve_archive_preference
 from documents.plugins.base import ConsumeTaskPlugin
 from documents.plugins.base import ProgressManager
 from documents.plugins.base import StopConsumeTaskError
@@ -321,7 +322,19 @@ def update_document_content_maybe_archive_file(document_id) -> None:
         parser.configure(ParserContext())
 
         try:
-            parser.parse(document.source_path, mime_type)
+            # Determine if we should produce an archive
+            needs_pdf = parser_class.requires_pdf_rendition
+            should_produce_archive = needs_pdf or resolve_archive_preference(
+                mime_type,
+                Path(document.source_path),
+                can_produce_archive=parser_class.can_produce_archive,
+            )
+
+            parser.parse(
+                document.source_path,
+                mime_type,
+                produce_archive=should_produce_archive,
+            )
 
             thumbnail = parser.get_thumbnail(document.source_path, mime_type)
 
