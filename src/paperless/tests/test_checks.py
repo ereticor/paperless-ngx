@@ -130,16 +130,10 @@ class TestOcrSettingsChecks:
                 id="invalid-mode",
             ),
             pytest.param(
-                "OCR_MODE",
-                "skip_noarchive",
-                "deprecated",
-                id="deprecated-mode",
-            ),
-            pytest.param(
-                "OCR_SKIP_ARCHIVE_FILE",
+                "ARCHIVE_FILE_GENERATION",
                 "invalid",
-                'OCR_SKIP_ARCHIVE_FILE setting "invalid"',
-                id="invalid-skip-archive-file",
+                'ARCHIVE_FILE_GENERATION setting "invalid"',
+                id="invalid-archive-file-generation",
             ),
             pytest.param(
                 "OCR_CLEAN",

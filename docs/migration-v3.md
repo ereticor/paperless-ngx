@@ -130,3 +130,21 @@ For example:
   }
 }
 ```
+
+## OCR and Archive Settings Changes
+
+The `PAPERLESS_OCR_MODE` values `skip` and `skip_noarchive` have been replaced by
+[`PAPERLESS_OCR_MODE=auto`](configuration.md#PAPERLESS_OCR_MODE). Archive file
+generation is now controlled by the separate
+[`PAPERLESS_ARCHIVE_FILE_GENERATION`](configuration.md#PAPERLESS_ARCHIVE_FILE_GENERATION)
+setting, replacing `PAPERLESS_OCR_SKIP_ARCHIVE_FILE`.
+
+### Summary
+
+| Old Setting                                 | New Setting                                                                                                                                                        |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PAPERLESS_OCR_MODE=skip`                   | [`PAPERLESS_OCR_MODE=auto`](configuration.md#PAPERLESS_OCR_MODE) (now the default)                                                                                 |
+| `PAPERLESS_OCR_MODE=skip_noarchive`         | [`PAPERLESS_OCR_MODE=auto`](configuration.md#PAPERLESS_OCR_MODE) + [`PAPERLESS_ARCHIVE_FILE_GENERATION=never`](configuration.md#PAPERLESS_ARCHIVE_FILE_GENERATION) |
+| `PAPERLESS_OCR_SKIP_ARCHIVE_FILE=never`     | [`PAPERLESS_ARCHIVE_FILE_GENERATION=always`](configuration.md#PAPERLESS_ARCHIVE_FILE_GENERATION)                                                                   |
+| `PAPERLESS_OCR_SKIP_ARCHIVE_FILE=with_text` | [`PAPERLESS_ARCHIVE_FILE_GENERATION=auto`](configuration.md#PAPERLESS_ARCHIVE_FILE_GENERATION)                                                                     |
+| `PAPERLESS_OCR_SKIP_ARCHIVE_FILE=always`    | [`PAPERLESS_ARCHIVE_FILE_GENERATION=never`](configuration.md#PAPERLESS_ARCHIVE_FILE_GENERATION)                                                                    |

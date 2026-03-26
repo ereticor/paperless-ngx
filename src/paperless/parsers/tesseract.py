@@ -494,6 +494,7 @@ class RasterisedDocumentParser:
         from ocrmypdf import InputFileError
         from ocrmypdf import SubprocessOutputError
         from ocrmypdf.exceptions import DigitalSignatureError
+        from ocrmypdf.exceptions import PriorOcrFoundError
 
         archive_path = Path(self.tempdir) / "archive.pdf"
         sidecar_file = Path(self.tempdir) / "sidecar.txt"
@@ -532,12 +533,87 @@ class RasterisedDocumentParser:
 
             if not self.text:
                 raise NoTextFoundException("No text was found in the original document")
+        except PriorOcrFoundError:
+            # pdftotext couldn't detect the text layer (e.g. RTL or CJK scripts),
+            # but ocrmypdf found it. Retry as PDF/A conversion only (skip_text).
+            self.log.debug(
+                "PDF has existing text layer not detected by pdftotext; "
+                "retrying with skip_text for PDF/A conversion.",
+            )
+            retry_args = self.construct_ocrmypdf_parameters(
+                input_file,
+                mime_type,
+                archive_path,
+                sidecar_file,
+                skip_text=True,
+            )
+            try:
+                ocrmypdf.ocr(**retry_args)
+                if produce_archive:
+                    self.archive_path = archive_path
+                self.text = self.extract_text(sidecar_file, archive_path)
+            except Exception as e:
+                raise ParseError(f"{e.__class__.__name__}: {e!s}") from e
         except (DigitalSignatureError, EncryptedPdfError):
             self.log.warning(
                 "This file is encrypted and/or signed, OCR is impossible. Using "
                 "any text present in the original file.",
             )
             self.text = text_original or ""
+        except InputFileError as e:
+            # Tagged PDFs raise InputFileError when called without skip_text/force_ocr.
+            # Retry with skip_text to do PDF/A conversion without disturbing the text layer.
+            if "Tagged PDF" in str(e):
+                self.log.debug(
+                    "Tagged PDF detected; retrying with skip_text for PDF/A conversion.",
+                )
+                retry_args = self.construct_ocrmypdf_parameters(
+                    input_file,
+                    mime_type,
+                    archive_path,
+                    sidecar_file,
+                    skip_text=True,
+                )
+                try:
+                    ocrmypdf.ocr(**retry_args)
+                    if produce_archive:
+                        self.archive_path = archive_path
+                    self.text = self.extract_text(sidecar_file, archive_path)
+                except Exception as retry_e:
+                    raise ParseError(
+                        f"{retry_e.__class__.__name__}: {retry_e!s}",
+                    ) from retry_e
+            else:
+                self.log.warning(
+                    f"Encountered an error while running OCR: {e!s}. "
+                    f"Attempting force OCR to get the text.",
+                )
+                archive_path_fallback = Path(self.tempdir) / "archive-fallback.pdf"
+                sidecar_file_fallback = Path(self.tempdir) / "sidecar-fallback.txt"
+                args = self.construct_ocrmypdf_parameters(
+                    input_file,
+                    mime_type
+                    if not (
+                        is_image
+                        and self.settings.mode == ModeChoices.OFF
+                        and produce_archive
+                    )
+                    else "application/pdf",
+                    archive_path_fallback,
+                    sidecar_file_fallback,
+                    safe_fallback=True,
+                )
+                try:
+                    self.log.debug(f"Fallback: Calling OCRmyPDF with args: {args}")
+                    ocrmypdf.ocr(**args)
+                    self.text = self.extract_text(
+                        sidecar_file_fallback,
+                        archive_path_fallback,
+                    )
+                except Exception as fallback_e:
+                    raise ParseError(
+                        f"{fallback_e.__class__.__name__}: {fallback_e!s}",
+                    ) from fallback_e
         except SubprocessOutputError as e:
             if "Ghostscript PDF/A rendering" in str(e):
                 self.log.warning(
@@ -548,7 +624,7 @@ class RasterisedDocumentParser:
             raise ParseError(
                 f"SubprocessOutputError: {e!s}. See logs for more information.",
             ) from e
-        except (NoTextFoundException, InputFileError) as e:
+        except NoTextFoundException as e:
             self.log.warning(
                 f"Encountered an error while running OCR: {e!s}. "
                 f"Attempting force OCR to get the text.",

@@ -43,6 +43,7 @@ class TestArchiver(DirectoriesMixin, FileSystemAssertsMixin, TestCase):
 
         call_command("document_archiver", "--processes", "1", skip_checks=True)
 
+    @override_settings(ARCHIVE_FILE_GENERATION="always")
     def test_handle_document(self) -> None:
         doc = self.make_models()
         shutil.copy(sample_file, Path(self.dirs.originals_dir) / f"{doc.id:07}.pdf")
@@ -73,7 +74,7 @@ class TestArchiver(DirectoriesMixin, FileSystemAssertsMixin, TestCase):
         self.assertIsNone(doc.archive_filename)
         self.assertIsFile(doc.source_path)
 
-    @override_settings(FILENAME_FORMAT="{title}")
+    @override_settings(FILENAME_FORMAT="{title}", ARCHIVE_FILE_GENERATION="always")
     def test_naming_priorities(self) -> None:
         doc1 = Document.objects.create(
             checksum="A",

@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 from unittest.mock import MagicMock
+from unittest.mock import Mock
 
 from django.conf import settings
 from django.contrib.auth.models import Group
@@ -1548,3 +1549,158 @@ class TestBarcodeApplyDetectedASN(TestCase):
 
         plugin._apply_detected_asn(123)
         self.assertEqual(plugin.metadata.asn, 123)
+
+
+# TODO: Convert these tests to pytest style in the future
+class TestArchivePreferenceWiring(DirectoriesMixin, GetConsumerMixin, TestCase):
+    """Test that archive preference settings are properly wired to parser calls."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Use simple test file that can be parsed by our test parsers
+        src = (
+            Path(__file__).parent
+            / "samples"
+            / "documents"
+            / "originals"
+            / "0000005.pdf"
+        )
+        self.test_file = self.dirs.scratch_dir / "sample.pdf"
+        shutil.copy(src, self.test_file)
+
+    @override_settings(ARCHIVE_FILE_GENERATION="never")
+    @mock.patch("documents.consumer.get_parser_registry")
+    def test_never_setting_passes_produce_archive_false(self, mock_registry):
+        """Test that ARCHIVE_FILE_GENERATION=never passes produce_archive=False to parser."""
+        # Mock parser to track produce_archive parameter
+        from unittest.mock import MagicMock
+
+        mock_parser_instance = Mock()
+        mock_parser_instance.can_produce_archive = True
+        mock_parser_instance.get_text.return_value = "Test text"
+        mock_parser_instance.get_archive_path.return_value = None
+        # Create a temporary thumbnail file for testing
+        thumbnail_path = self.dirs.scratch_dir / "thumbnail.webp"
+        thumbnail_path.write_bytes(b"fake_thumbnail_data")
+        mock_parser_instance.get_thumbnail.return_value = thumbnail_path
+        mock_parser_instance.get_date.return_value = None
+        mock_parser_instance.get_page_count.return_value = 1
+        mock_parser_instance.extract_metadata.return_value = []
+
+        # Use MagicMock to properly support context manager protocol
+        mock_parser_class = MagicMock()
+        mock_parser_class.return_value.__enter__ = Mock(
+            return_value=mock_parser_instance,
+        )
+        mock_parser_class.return_value.__exit__ = Mock(return_value=None)
+        mock_parser_class.can_produce_archive = True
+        mock_parser_class.requires_pdf_rendition = False
+
+        mock_registry_instance = Mock()
+        mock_registry_instance.get_parser_for_file.return_value = mock_parser_class
+        mock_registry.return_value = mock_registry_instance
+
+        with self.get_consumer(self.test_file) as consumer:
+            consumer.run()
+
+        # Verify parse was called with produce_archive=False
+        mock_parser_instance.parse.assert_called_once()
+        call_args = mock_parser_instance.parse.call_args
+        self.assertEqual(call_args.kwargs["produce_archive"], False)
+
+    @override_settings(ARCHIVE_FILE_GENERATION="always")
+    @mock.patch("documents.consumer.get_parser_registry")
+    def test_always_setting_passes_produce_archive_true(self, mock_registry):
+        """Test that ARCHIVE_FILE_GENERATION=always passes produce_archive=True to parser."""
+        # Mock parser to track produce_archive parameter
+        from unittest.mock import MagicMock
+
+        mock_parser_instance = Mock()
+        mock_parser_instance.can_produce_archive = True
+        mock_parser_instance.get_text.return_value = "Test text"
+        mock_parser_instance.get_archive_path.return_value = (
+            self.test_file
+        )  # Fake archive
+        # Create a temporary thumbnail file for testing
+        thumbnail_path = self.dirs.scratch_dir / "thumbnail.webp"
+        thumbnail_path.write_bytes(b"fake_thumbnail_data")
+        mock_parser_instance.get_thumbnail.return_value = thumbnail_path
+        mock_parser_instance.get_date.return_value = None
+        mock_parser_instance.get_page_count.return_value = 1
+        mock_parser_instance.extract_metadata.return_value = []
+
+        # Use MagicMock to properly support context manager protocol
+        mock_parser_class = MagicMock()
+        mock_parser_class.return_value.__enter__ = Mock(
+            return_value=mock_parser_instance,
+        )
+        mock_parser_class.return_value.__exit__ = Mock(return_value=None)
+        mock_parser_class.can_produce_archive = True
+        mock_parser_class.requires_pdf_rendition = False
+
+        mock_registry_instance = Mock()
+        mock_registry_instance.get_parser_for_file.return_value = mock_parser_class
+        mock_registry.return_value = mock_registry_instance
+
+        with self.get_consumer(self.test_file) as consumer:
+            consumer.run()
+
+        # Verify parse was called with produce_archive=True
+        mock_parser_instance.parse.assert_called_once()
+        call_args = mock_parser_instance.parse.call_args
+        self.assertEqual(call_args.kwargs["produce_archive"], True)
+
+    @override_settings(ARCHIVE_FILE_GENERATION="auto")
+    @mock.patch("documents.consumer.resolve_archive_preference")
+    @mock.patch("documents.consumer.get_parser_registry")
+    def test_auto_setting_delegates_to_resolve_archive_preference(
+        self,
+        mock_registry,
+        mock_resolve_preference,
+    ):
+        """Test that ARCHIVE_FILE_GENERATION=auto delegates to resolve_archive_preference."""
+        mock_resolve_preference.return_value = False
+
+        # Mock parser to track produce_archive parameter
+        mock_parser_instance = Mock()
+        mock_parser_instance.can_produce_archive = True
+        mock_parser_instance.get_text.return_value = "Test text"
+        mock_parser_instance.get_archive_path.return_value = None
+        # Create a temporary thumbnail file for testing
+        thumbnail_path = self.dirs.scratch_dir / "thumbnail.webp"
+        thumbnail_path.write_bytes(b"fake_thumbnail_data")
+        mock_parser_instance.get_thumbnail.return_value = thumbnail_path
+        mock_parser_instance.get_date.return_value = None
+        mock_parser_instance.get_page_count.return_value = 1
+        mock_parser_instance.extract_metadata.return_value = []
+
+        # Use MagicMock to properly support context manager protocol
+        from unittest.mock import MagicMock
+
+        mock_parser_class = MagicMock()
+        mock_parser_class.return_value.__enter__ = Mock(
+            return_value=mock_parser_instance,
+        )
+        mock_parser_class.return_value.__exit__ = Mock(return_value=None)
+        mock_parser_class.can_produce_archive = True
+        mock_parser_class.requires_pdf_rendition = False
+
+        mock_registry_instance = Mock()
+        mock_registry_instance.get_parser_for_file.return_value = mock_parser_class
+        mock_registry.return_value = mock_registry_instance
+
+        with self.get_consumer(self.test_file) as consumer:
+            consumer.run()
+
+        # Verify resolve_archive_preference was called with correct parameters
+        mock_resolve_preference.assert_called_once()
+        call_args = mock_resolve_preference.call_args
+        self.assertEqual(call_args.args[0], "application/pdf")
+        # Path will be working copy (different from original), so check it's a Path to sample.pdf
+        self.assertEqual(call_args.args[1].name, "sample.pdf")
+        self.assertEqual(call_args.kwargs["can_produce_archive"], True)
+
+        # Verify parse was called with the result from resolve_archive_preference
+        mock_parser_instance.parse.assert_called_once()
+        call_args = mock_parser_instance.parse.call_args
+        self.assertEqual(call_args.kwargs["produce_archive"], False)

@@ -801,11 +801,13 @@ parsing documents.
 
 #### [`PAPERLESS_OCR_MODE=<mode>`](#PAPERLESS_OCR_MODE) {#PAPERLESS_OCR_MODE}
 
-: Tell paperless when and how to perform ocr on your documents. Three
-modes are available:
+: Tell paperless when and how to perform OCR on your documents. The
+following modes are available:
 
-    -   `skip`: Paperless skips all pages and will perform ocr only on
-        pages where no text is present. This is the safest option.
+    -   `auto`: Paperless auto-detects whether a document already
+        contains extractable text using pdftotext. If the extracted
+        text exceeds a threshold (50 characters), OCR is skipped;
+        otherwise OCR runs. This is the default.
 
     -   `redo`: Paperless will OCR all pages of your documents and
         attempt to replace any existing text layers with new text. This
@@ -823,24 +825,46 @@ modes are available:
         significantly larger and text won't appear as sharp when zoomed
         in.
 
-    The default is `skip`, which only performs OCR when necessary and
-    always creates archived documents.
+    -   `off`: OCR never runs regardless of input type. Embedded text
+        is still extracted from PDFs via pdftotext, but images and
+        scanned PDFs without text layers will have empty content.
+        Useful for handwritten documents, bulk ingestion of large
+        archives, or content that OCRs poorly. Archive generation still
+        works independently when `PAPERLESS_ARCHIVE_FILE_GENERATION`
+        requests it — a PDF/A can be produced without OCR via format
+        conversion only.
+
+    Defaults to `auto`.
 
     Read more about this in the [OCRmyPDF
     documentation](https://ocrmypdf.readthedocs.io/en/latest/advanced.html#when-ocr-is-skipped).
 
-#### [`PAPERLESS_OCR_SKIP_ARCHIVE_FILE=<mode>`](#PAPERLESS_OCR_SKIP_ARCHIVE_FILE) {#PAPERLESS_OCR_SKIP_ARCHIVE_FILE}
+#### [`PAPERLESS_ARCHIVE_FILE_GENERATION=<mode>`](#PAPERLESS_ARCHIVE_FILE_GENERATION) {#PAPERLESS_ARCHIVE_FILE_GENERATION}
 
-: Specify when you would like paperless to skip creating an archived
-version of your documents. This is useful if you don't want to have two
-almost-identical versions of your documents in the media folder.
+: Controls whether paperless produces a normalized PDF/A archive copy
+of each document. This is independent of OCR — a PDF/A can be produced
+with or without running OCR.
 
-    -   `never`: Never skip creating an archived version.
-    -   `with_text`: Skip creating an archived version for documents
-    that already have embedded text.
-    -   `always`: Always skip creating an archived version.
+    -   `auto`: Produce archives for scanned and image-based documents;
+        skip for born-digital PDFs. Born-digital is detected by
+        checking both whether the PDF contains extractable text and
+        whether it has a logical structure (tag tree), which word
+        processors and PDF export tools produce. Scanner software that
+        applies its own OCR typically does not produce tagged PDFs, so
+        those still receive an archive.
 
-    The default is `never`.
+    -   `always`: Always produce a PDF/A archive when the parser
+        supports it.
+
+    -   `never`: Never produce an archive.
+
+    Defaults to `auto`.
+
+    !!! note
+
+        Parsers that must produce a PDF for the frontend to display the
+        document (e.g. the Tika parser for Office documents) always
+        produce a PDF rendition regardless of this setting.
 
 #### [`PAPERLESS_OCR_CLEAN=<mode>`](#PAPERLESS_OCR_CLEAN) {#PAPERLESS_OCR_CLEAN}
 

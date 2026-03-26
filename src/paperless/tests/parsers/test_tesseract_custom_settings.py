@@ -93,11 +93,13 @@ class TestParserSettingsFromDb(DirectoriesMixin, FileSystemAssertsMixin, TestCas
         """
         with override_settings(OCR_MODE="redo"):
             instance = ApplicationConfiguration.objects.all().first()
-            instance.mode = ModeChoices.SKIP
+            instance.mode = ModeChoices.AUTO
             instance.save()
 
             params = self.get_params()
-        self.assertTrue(params["skip_text"])
+        # AUTO mode doesn't set skip_text in construct_ocrmypdf_parameters
+        # The skip_text logic is handled in the parse method based on content detection
+        self.assertNotIn("skip_text", params)
         self.assertNotIn("redo_ocr", params)
         self.assertNotIn("force_ocr", params)
 

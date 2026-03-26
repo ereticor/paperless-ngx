@@ -233,10 +233,12 @@ class TestEmptyTrashTask(DirectoriesMixin, FileSystemAssertsMixin, TestCase):
 
 
 class TestUpdateContent(DirectoriesMixin, TestCase):
+    @override_settings(ARCHIVE_FILE_GENERATION="always")
     def test_update_content_maybe_archive_file(self) -> None:
         """
         GIVEN:
             - Existing document with archive file
+            - ARCHIVE_FILE_GENERATION=always to force archive production
         WHEN:
             - Update content task is called
         THEN:

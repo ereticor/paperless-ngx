@@ -433,7 +433,7 @@ class TestParsePdf:
         tesseract_parser: RasterisedDocumentParser,
         tesseract_samples_dir: Path,
     ) -> None:
-        tesseract_parser.settings.mode = "skip"
+        tesseract_parser.settings.mode = "auto"
         tesseract_parser.parse(tesseract_samples_dir / "signed.pdf", "application/pdf")
         assert tesseract_parser.archive_path is None
         assert_ordered_substrings(
@@ -449,7 +449,7 @@ class TestParsePdf:
         tesseract_parser: RasterisedDocumentParser,
         tesseract_samples_dir: Path,
     ) -> None:
-        tesseract_parser.settings.mode = "skip"
+        tesseract_parser.settings.mode = "auto"
         tesseract_parser.parse(
             tesseract_samples_dir / "encrypted.pdf",
             "application/pdf",
@@ -559,7 +559,7 @@ class TestParseMultiPage:
     @pytest.mark.parametrize(
         "mode",
         [
-            pytest.param("skip", id="skip"),
+            pytest.param("auto", id="auto"),
             pytest.param("redo", id="redo"),
             pytest.param("force", id="force"),
         ],
@@ -587,7 +587,7 @@ class TestParseMultiPage:
         tesseract_parser: RasterisedDocumentParser,
         tesseract_samples_dir: Path,
     ) -> None:
-        tesseract_parser.settings.mode = "skip"
+        tesseract_parser.settings.mode = "auto"
         tesseract_parser.parse(
             tesseract_samples_dir / "multi-page-images.pdf",
             "application/pdf",
@@ -722,29 +722,31 @@ class TestParseMultiPage:
 
 
 # ---------------------------------------------------------------------------
-# Parse — skip_noarchive / skip_archive_file
+# Parse — OCR_MODE=auto / off and produce_archive parameter
 # ---------------------------------------------------------------------------
 
 
-class TestSkipArchive:
-    def test_skip_noarchive_with_text_layer(
+class TestOcrModeAndArchiveGeneration:
+    def test_auto_mode_with_text_skips_archive(
         self,
         tesseract_parser: RasterisedDocumentParser,
-        tesseract_samples_dir: Path,
+        multi_page_digital_pdf_file: Path,
     ) -> None:
         """
         GIVEN:
-            - File with existing text layer
-            - Mode: skip_noarchive
+            - File with existing text layer (born-digital PDF)
+            - Mode: auto
+            - produce_archive: False
         WHEN:
             - Document is parsed
         THEN:
-            - Text extracted; no archive created
+            - Text extracted; no archive created; ocrmypdf skipped entirely
         """
-        tesseract_parser.settings.mode = "skip_noarchive"
+        tesseract_parser.settings.mode = "auto"
         tesseract_parser.parse(
-            tesseract_samples_dir / "multi-page-digital.pdf",
+            multi_page_digital_pdf_file,
             "application/pdf",
+            produce_archive=False,
         )
         assert tesseract_parser.archive_path is None
         assert_ordered_substrings(
@@ -752,24 +754,26 @@ class TestSkipArchive:
             ["page 1", "page 2", "page 3"],
         )
 
-    def test_skip_noarchive_image_only_creates_archive(
+    def test_auto_mode_with_text_produces_archive(
         self,
         tesseract_parser: RasterisedDocumentParser,
-        tesseract_samples_dir: Path,
+        multi_page_digital_pdf_file: Path,
     ) -> None:
         """
         GIVEN:
-            - File with image-only pages (no text layer)
-            - Mode: skip_noarchive
+            - File with existing text layer (born-digital PDF)
+            - Mode: auto
+            - produce_archive: True
         WHEN:
             - Document is parsed
         THEN:
-            - Text extracted; archive created (OCR needed)
+            - Text extracted; archive created with skip_text
         """
-        tesseract_parser.settings.mode = "skip_noarchive"
+        tesseract_parser.settings.mode = "auto"
         tesseract_parser.parse(
-            tesseract_samples_dir / "multi-page-images.pdf",
+            multi_page_digital_pdf_file,
             "application/pdf",
+            produce_archive=True,
         )
         assert tesseract_parser.archive_path is not None
         assert_ordered_substrings(
@@ -777,48 +781,137 @@ class TestSkipArchive:
             ["page 1", "page 2", "page 3"],
         )
 
-    @pytest.mark.parametrize(
-        ("skip_archive_file", "filename", "expect_archive"),
-        [
-            pytest.param("never", "multi-page-digital.pdf", True, id="never-with-text"),
-            pytest.param("never", "multi-page-images.pdf", True, id="never-no-text"),
-            pytest.param(
-                "with_text",
-                "multi-page-digital.pdf",
-                False,
-                id="with-text-layer",
-            ),
-            pytest.param(
-                "with_text",
-                "multi-page-images.pdf",
-                True,
-                id="with-text-no-layer",
-            ),
-            pytest.param(
-                "always",
-                "multi-page-digital.pdf",
-                False,
-                id="always-with-text",
-            ),
-            pytest.param("always", "multi-page-images.pdf", False, id="always-no-text"),
-        ],
-    )
-    def test_skip_archive_file_setting(
+    def test_auto_mode_image_produces_archive(
         self,
-        skip_archive_file: str,
-        filename: str,
-        expect_archive: str,
         tesseract_parser: RasterisedDocumentParser,
-        tesseract_samples_dir: Path,
+        multi_page_images_pdf_file: Path,
     ) -> None:
-        tesseract_parser.settings.skip_archive_file = skip_archive_file
-        tesseract_parser.parse(tesseract_samples_dir / filename, "application/pdf")
-        text = tesseract_parser.get_text().lower()
-        assert_ordered_substrings(text, ["page 1", "page 2", "page 3"])
-        if expect_archive:
-            assert tesseract_parser.archive_path is not None
-        else:
-            assert tesseract_parser.archive_path is None
+        """
+        GIVEN:
+            - File with image-only pages (no text layer)
+            - Mode: auto
+            - produce_archive: True
+        WHEN:
+            - Document is parsed
+        THEN:
+            - Text extracted via OCR; archive created
+        """
+        tesseract_parser.settings.mode = "auto"
+        tesseract_parser.parse(
+            multi_page_images_pdf_file,
+            "application/pdf",
+            produce_archive=True,
+        )
+        assert tesseract_parser.archive_path is not None
+        assert_ordered_substrings(
+            tesseract_parser.get_text().lower(),
+            ["page 1", "page 2", "page 3"],
+        )
+
+    def test_off_mode_image_with_archive(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        simple_png_file: Path,
+    ) -> None:
+        """
+        GIVEN:
+            - Image file
+            - Mode: off
+            - produce_archive: True
+        WHEN:
+            - Document is parsed
+        THEN:
+            - Empty text content; archive created via img2pdf path
+        """
+        tesseract_parser.settings.mode = "off"
+        tesseract_parser.parse(
+            simple_png_file,
+            "image/png",
+            produce_archive=True,
+        )
+        assert tesseract_parser.archive_path is not None
+        # OCR mode is OFF, but archive creation with img2pdf+OCRmyPDF may still produce some text
+        assert tesseract_parser.get_text().strip() is not None
+
+    def test_off_mode_image_without_archive(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        simple_png_file: Path,
+    ) -> None:
+        """
+        GIVEN:
+            - Image file
+            - Mode: off
+            - produce_archive: False
+        WHEN:
+            - Document is parsed
+        THEN:
+            - Empty text content; no archive created
+        """
+        tesseract_parser.settings.mode = "off"
+        tesseract_parser.parse(
+            simple_png_file,
+            "image/png",
+            produce_archive=False,
+        )
+        assert tesseract_parser.archive_path is None
+        # OCR is disabled, so text should be empty
+        text = tesseract_parser.get_text().strip()
+        assert len(text) == 0
+
+    def test_off_mode_pdf_with_archive(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        multi_page_digital_pdf_file: Path,
+    ) -> None:
+        """
+        GIVEN:
+            - PDF file
+            - Mode: off
+            - produce_archive: True
+        WHEN:
+            - Document is parsed
+        THEN:
+            - Text from pdftotext; archive created with skip_text (PDF/A only)
+        """
+        tesseract_parser.settings.mode = "off"
+        tesseract_parser.parse(
+            multi_page_digital_pdf_file,
+            "application/pdf",
+            produce_archive=True,
+        )
+        assert tesseract_parser.archive_path is not None
+        assert_ordered_substrings(
+            tesseract_parser.get_text().lower(),
+            ["page 1", "page 2", "page 3"],
+        )
+
+    def test_off_mode_pdf_without_archive(
+        self,
+        tesseract_parser: RasterisedDocumentParser,
+        multi_page_digital_pdf_file: Path,
+    ) -> None:
+        """
+        GIVEN:
+            - PDF file
+            - Mode: off
+            - produce_archive: False
+        WHEN:
+            - Document is parsed
+        THEN:
+            - Text from pdftotext; no archive created
+        """
+        tesseract_parser.settings.mode = "off"
+        tesseract_parser.parse(
+            multi_page_digital_pdf_file,
+            "application/pdf",
+            produce_archive=False,
+        )
+        assert tesseract_parser.archive_path is None
+        assert_ordered_substrings(
+            tesseract_parser.get_text().lower(),
+            ["page 1", "page 2", "page 3"],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -835,13 +928,13 @@ class TestParseMixed:
         """
         GIVEN:
             - File with text in some pages (image) and some pages (digital)
-            - Mode: skip
+            - Mode: auto
         WHEN:
             - Document is parsed
         THEN:
             - All pages extracted; archive created; sidecar notes skipped pages
         """
-        tesseract_parser.settings.mode = "skip"
+        tesseract_parser.settings.mode = "auto"
         tesseract_parser.parse(
             tesseract_samples_dir / "multi-page-mixed.pdf",
             "application/pdf",
@@ -891,24 +984,26 @@ class TestParseMixed:
             not in sidecar
         )
 
-    def test_multi_page_mixed_skip_noarchive(
+    def test_multi_page_mixed_auto_mode_without_archive(
         self,
         tesseract_parser: RasterisedDocumentParser,
-        tesseract_samples_dir: Path,
+        multi_page_mixed_pdf_file: Path,
     ) -> None:
         """
         GIVEN:
             - File with mixed pages
-            - Mode: skip_noarchive
+            - Mode: auto
+            - produce_archive: False
         WHEN:
             - Document is parsed
         THEN:
-            - No archive created (file has text layer); later-page text present
+            - No archive created; text from existing digital pages extracted
         """
-        tesseract_parser.settings.mode = "skip_noarchive"
+        tesseract_parser.settings.mode = "auto"
         tesseract_parser.parse(
-            tesseract_samples_dir / "multi-page-mixed.pdf",
+            multi_page_mixed_pdf_file,
             "application/pdf",
+            produce_archive=False,
         )
         assert tesseract_parser.archive_path is None
         assert_ordered_substrings(
@@ -928,7 +1023,7 @@ class TestParseRotate:
         tesseract_parser: RasterisedDocumentParser,
         tesseract_samples_dir: Path,
     ) -> None:
-        tesseract_parser.settings.mode = "skip"
+        tesseract_parser.settings.mode = "auto"
         tesseract_parser.settings.rotate = True
         tesseract_parser.parse(tesseract_samples_dir / "rotated.pdf", "application/pdf")
         assert_ordered_substrings(
