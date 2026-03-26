@@ -21,7 +21,7 @@ ask() {
 	done
 }
 
-ask_docker_folder() {
+ask_podman_folder() {
 	while true ; do
 
 		read -r -p "$1 [$2]: " result
@@ -51,22 +51,22 @@ if ! command -v wget &> /dev/null ; then
 	exit 1
 fi
 
-if ! command -v docker &> /dev/null ; then
-	echo "docker executable not found. Is Docker installed?"
+if ! command -v podman &> /dev/null ; then
+	echo "podman executable not found. Is podman installed?"
 	exit 1
 fi
 
-if ! docker compose &> /dev/null ; then
-	echo "docker compose plugin not found. Is Docker Compose installed?"
+if ! podman compose &> /dev/null ; then
+	echo "podman compose plugin not found. Is podman Compose installed?"
 	exit 1
 fi
 
-# Check if user has permissions to run Docker by trying to get the status of Docker (docker status).
-# If this fails, the user probably does not have permissions for Docker.
-if ! docker stats --no-stream &> /dev/null ; then
+# Check if user has permissions to run podman by trying to get the status of podman (podman status).
+# If this fails, the user probably does not have permissions for podman.
+if ! podman stats --no-stream &> /dev/null ; then
 	echo ""
-	echo "WARN: It look like the current user does not have Docker permissions."
-	echo "WARN: Use 'sudo usermod -aG docker $USER' to assign Docker permissions to the user (may require restarting the shell)."
+	echo "WARN: It look like the current user does not have podman permissions."
+	echo "WARN: Use 'sudo usermod -aG podman $USER' to assign podman permissions to the user (may require restarting the shell)."
 	echo ""
 	sleep 3
 fi
@@ -87,7 +87,7 @@ set -e
 
 echo ""
 echo "#############################################"
-echo "###   paperless-ngx docker installation   ###"
+echo "###   paperless-ngx podman installation   ###"
 echo "#############################################"
 echo ""
 echo "This script will download, configure and start paperless-ngx."
@@ -191,19 +191,19 @@ echo "  /mnt/consume"
 echo "  ./consume"
 echo ""
 
-ask_docker_folder "Consume folder" "$TARGET_FOLDER/consume"
+ask_podman_folder "Consume folder" "$TARGET_FOLDER/consume"
 CONSUME_FOLDER=$ask_result
 
 echo ""
 echo "The media folder is where paperless stores your documents."
-echo "Leave empty and docker will manage this folder for you."
-echo "Docker usually stores managed folders in /var/lib/docker/volumes."
+echo "Leave empty and podman will manage this folder for you."
+echo "podman usually stores managed folders in /var/lib/podman/volumes."
 echo ""
 echo "CAUTION: If specified, you must specify an absolute path starting with /"
 echo "or a relative path starting with ./ here."
 echo ""
 
-ask_docker_folder "Media folder" ""
+ask_podman_folder "Media folder" ""
 MEDIA_FOLDER=$ask_result
 
 echo ""
@@ -212,25 +212,25 @@ if [[ "$DATABASE_BACKEND" == "sqlite" ]] ; then
 	echo -n "SQLite database, the "
 fi
 echo "search index and other data."
-echo "As with the media folder, leave empty to have this managed by Docker."
+echo "As with the media folder, leave empty to have this managed by podman."
 echo ""
 echo "CAUTION: If specified, you must specify an absolute path starting with /"
 echo "or a relative path starting with ./ here."
 echo ""
 
-ask_docker_folder "Data folder" ""
+ask_podman_folder "Data folder" ""
 DATA_FOLDER=$ask_result
 
 if [[ "$DATABASE_BACKEND" == "postgres" || "$DATABASE_BACKEND" == "mariadb" ]] ; then
 	echo ""
 	echo "The database folder, where your database stores its data."
-	echo "Leave empty to have this managed by Docker."
+	echo "Leave empty to have this managed by podman."
 	echo ""
 	echo "CAUTION: If specified, you must specify an absolute path starting with /"
 	echo "or a relative path starting with ./ here."
 	echo ""
 
-	ask_docker_folder "Database folder" ""
+	ask_podman_folder "Database folder" ""
 	DATABASE_FOLDER=$ask_result
 fi
 
@@ -276,18 +276,18 @@ echo ""
 echo "Target folder: $TARGET_FOLDER"
 echo "Consume folder: $CONSUME_FOLDER"
 if [[ -z $MEDIA_FOLDER ]] ; then
-	echo "Media folder: Managed by Docker"
+	echo "Media folder: Managed by podman"
 else
 	echo "Media folder: $MEDIA_FOLDER"
 fi
 if [[ -z $DATA_FOLDER ]] ; then
-	echo "Data folder: Managed by Docker"
+	echo "Data folder: Managed by podman"
 else
 	echo "Data folder: $DATA_FOLDER"
 fi
 if [[ "$DATABASE_BACKEND" == "postgres" || "$DATABASE_BACKEND" == "mariadb" ]] ; then
 	if [[ -z $DATABASE_FOLDER ]] ; then
-		echo "Database folder: Managed by Docker"
+		echo "Database folder: Managed by podman"
 	else
 		echo "Database folder: $DATABASE_FOLDER"
 	fi
@@ -392,16 +392,16 @@ if [ "$l1" -eq "$l2" ] ; then
 fi
 
 
-docker compose pull
+podman compose pull
 
 if [ "$DATABASE_BACKEND" == "postgres" ] || [ "$DATABASE_BACKEND" == "mariadb" ] ; then
 	echo "Starting DB first for initialization"
-	docker compose up --detach db
+	podman compose up --detach db
 	# hopefully enough time for even the slower systems
 	sleep 15
-	docker compose stop
+	podman compose stop
 fi
 
-docker compose run --rm -e DJANGO_SUPERUSER_PASSWORD="$PASSWORD" webserver createsuperuser --noinput --username "$USERNAME" --email "$EMAIL"
+podman compose run --rm -e DJANGO_SUPERUSER_PASSWORD="$PASSWORD" webserver createsuperuser --noinput --username "$USERNAME" --email "$EMAIL"
 
-docker compose up --detach
+podman compose up --detach
