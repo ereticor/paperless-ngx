@@ -432,20 +432,6 @@ class ConsumerPlugin(
                     f"Parser: {document_parser.name} v{document_parser.version}",
                 )
 
-                document_parser.parse(
-                    self.working_copy,
-                    mime_type,
-                    produce_archive=should_produce_archive,
-                )
-
-                self.log.debug(f"Generating thumbnail for {self.filename}...")
-                self._send_progress(
-                    70,
-                    100,
-                    ProgressStatusOptions.WORKING,
-                    ConsumerStatusShortMessage.GENERATING_THUMBNAIL,
-                )
-
                 # Parse the document. This may take some time.
 
                 text = None
@@ -463,7 +449,11 @@ class ConsumerPlugin(
                     )
                     self.log.debug(f"Parsing {self.filename}...")
 
-                    document_parser.parse(self.working_copy, mime_type)
+                    document_parser.parse(
+                        self.working_copy,
+                        mime_type,
+                        produce_archive=should_produce_archive,
+                    )
 
                     self.log.debug(f"Generating thumbnail for {self.filename}...")
                     self._send_progress(
