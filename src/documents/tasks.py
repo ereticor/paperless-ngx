@@ -323,11 +323,11 @@ def update_document_content_maybe_archive_file(document_id) -> None:
 
         try:
             # Determine if we should produce an archive
-            needs_pdf = parser_class.requires_pdf_rendition
+            needs_pdf = parser.requires_pdf_rendition
             should_produce_archive = needs_pdf or resolve_archive_preference(
                 mime_type,
                 Path(document.source_path),
-                can_produce_archive=parser_class.can_produce_archive,
+                can_produce_archive=parser.can_produce_archive,
             )
 
             parser.parse(

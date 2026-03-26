@@ -1127,6 +1127,7 @@ class TestConsumer(
             mock_mail_parser_parse.assert_called_once_with(
                 consumer.working_copy,
                 "message/rfc822",
+                produce_archive=True,
             )
 
 
@@ -1577,6 +1578,7 @@ class TestArchivePreferenceWiring(DirectoriesMixin, GetConsumerMixin, TestCase):
 
         mock_parser_instance = Mock()
         mock_parser_instance.can_produce_archive = True
+        mock_parser_instance.requires_pdf_rendition = False
         mock_parser_instance.get_text.return_value = "Test text"
         mock_parser_instance.get_archive_path.return_value = None
         # Create a temporary thumbnail file for testing
@@ -1593,8 +1595,6 @@ class TestArchivePreferenceWiring(DirectoriesMixin, GetConsumerMixin, TestCase):
             return_value=mock_parser_instance,
         )
         mock_parser_class.return_value.__exit__ = Mock(return_value=None)
-        mock_parser_class.can_produce_archive = True
-        mock_parser_class.requires_pdf_rendition = False
 
         mock_registry_instance = Mock()
         mock_registry_instance.get_parser_for_file.return_value = mock_parser_class
@@ -1617,6 +1617,7 @@ class TestArchivePreferenceWiring(DirectoriesMixin, GetConsumerMixin, TestCase):
 
         mock_parser_instance = Mock()
         mock_parser_instance.can_produce_archive = True
+        mock_parser_instance.requires_pdf_rendition = False
         mock_parser_instance.get_text.return_value = "Test text"
         mock_parser_instance.get_archive_path.return_value = (
             self.test_file
@@ -1635,8 +1636,6 @@ class TestArchivePreferenceWiring(DirectoriesMixin, GetConsumerMixin, TestCase):
             return_value=mock_parser_instance,
         )
         mock_parser_class.return_value.__exit__ = Mock(return_value=None)
-        mock_parser_class.can_produce_archive = True
-        mock_parser_class.requires_pdf_rendition = False
 
         mock_registry_instance = Mock()
         mock_registry_instance.get_parser_for_file.return_value = mock_parser_class
@@ -1664,6 +1663,7 @@ class TestArchivePreferenceWiring(DirectoriesMixin, GetConsumerMixin, TestCase):
         # Mock parser to track produce_archive parameter
         mock_parser_instance = Mock()
         mock_parser_instance.can_produce_archive = True
+        mock_parser_instance.requires_pdf_rendition = False
         mock_parser_instance.get_text.return_value = "Test text"
         mock_parser_instance.get_archive_path.return_value = None
         # Create a temporary thumbnail file for testing
@@ -1682,8 +1682,6 @@ class TestArchivePreferenceWiring(DirectoriesMixin, GetConsumerMixin, TestCase):
             return_value=mock_parser_instance,
         )
         mock_parser_class.return_value.__exit__ = Mock(return_value=None)
-        mock_parser_class.can_produce_archive = True
-        mock_parser_class.requires_pdf_rendition = False
 
         mock_registry_instance = Mock()
         mock_registry_instance.get_parser_for_file.return_value = mock_parser_class

@@ -447,11 +447,11 @@ class ConsumerPlugin(
                 self.log.debug(f"Parsing {self.filename}...")
 
                 # Determine if we should produce an archive
-                needs_pdf = parser_class.requires_pdf_rendition
+                needs_pdf = document_parser.requires_pdf_rendition
                 should_produce_archive = needs_pdf or resolve_archive_preference(
                     mime_type,
                     self.working_copy,
-                    can_produce_archive=parser_class.can_produce_archive,
+                    can_produce_archive=document_parser.can_produce_archive,
                 )
 
                 document_parser.parse(
